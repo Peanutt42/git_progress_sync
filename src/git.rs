@@ -71,3 +71,31 @@ pub fn save_stash(output_filepath: impl AsRef<Path>) -> Result<(), GitProgressSy
 		.into())
 	}
 }
+
+pub fn get_git_current_branch_name() -> Result<String, RunGitError> {
+	let args = vec![
+		"rev-parse".to_string(),
+		"--abbrev-ref".to_string(),
+		"HEAD".to_string(),
+	];
+
+	let output = std::process::Command::new("git")
+		.args(&args)
+		.output()
+		.map_err(|e| RunGitError {
+			args: args.clone(),
+			kind: RunGitErrorKind::StdioError(e),
+		})?;
+
+	if output.status.success() {
+		Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+	} else {
+		Err(RunGitError {
+			args,
+			kind: RunGitErrorKind::NonZeroExitCode {
+				exit_code: output.status.code().unwrap_or(-1),
+				stderr: StdErr::new(output.stderr),
+			},
+		})
+	}
+}

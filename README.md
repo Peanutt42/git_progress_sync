@@ -11,3 +11,35 @@ For now, saves to a local file, that could be OneDrive using rclone.
 ```bash
 cargo install --path .
 ```
+
+## Configuration
+
+```bash
+git_progress_sync configure --root-directory /path/to/root/directory
+```
+
+this will configure the config file in `~/.config/git-progress-sync/config.toml`:
+
+```toml
+root_directory = "/path/to/root/directory"
+```
+
+## Usage
+
+To save your changes:
+
+```bash
+git_progress_sync save
+```
+
+To load your changes:
+
+```bash
+git_progress_sync
+```
+
+this will do the same as this:
+
+```bash
+git_progress_sync load
+```

@@ -1,3 +1,4 @@
+use crate::{LoadConfigError, SaveConfigError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -8,6 +9,10 @@ pub enum GitProgressSyncError {
 	Stdio(#[from] std::io::Error),
 	#[error("Failed to save stash to file: {0}")]
 	SaveFile(std::io::Error),
+	#[error(transparent)]
+	SaveConfig(#[from] SaveConfigError),
+	#[error(transparent)]
+	LoadConfig(#[from] LoadConfigError),
 }
 
 #[derive(Debug, Error)]
