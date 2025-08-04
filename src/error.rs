@@ -16,7 +16,7 @@ pub enum GitProgressSyncError {
 }
 
 #[derive(Debug, Error)]
-#[error("Failed to run 'git {args:?}': {kind}")]
+#[error("Failed to run 'git {formatted_args}': {kind}", formatted_args = .args.join(" "))]
 pub struct RunGitError {
 	pub args: Vec<String>,
 	#[source]
