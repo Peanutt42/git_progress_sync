@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use colored::Colorize;
 use std::{path::PathBuf, process::exit};
 
 mod error;
@@ -14,34 +15,40 @@ fn main() {
 	let cli = Cli::parse();
 
 	let config_filepath = Config::get_default_config_filepath().unwrap_or_else(|| {
-		eprintln!("Failed to get default config filepath");
-		exit(1);
+		exit_with_error("Failed to get default config filepath");
 	});
 
 	let config = Config::load(&config_filepath).unwrap_or_else(|e| match e {
 		LoadConfigError::FileNotFound => {
 			let default_config = Config::default().unwrap_or_else(|| {
-				eprintln!("Failed to create default config");
-				exit(1);
+				exit_with_error("Failed to create default config");
 			});
 
 			default_config.save(&config_filepath).unwrap_or_else(|e| {
-				eprintln!("Failed to save default config: {e}");
-				exit(1);
+				exit_with_error(format!("Failed to save default config: {e}"));
 			});
 
 			default_config
 		}
 		_ => {
-			eprintln!("Failed to load config: {e}");
-			exit(1);
+			exit_with_error(format!("Failed to load config: {e}"));
 		}
 	});
 
 	if let Err(e) = cli.run(config_filepath, config) {
-		eprintln!("git progress sync failed:\n{e}");
-		exit(1);
+		exit_with_error(format!("git progress sync failed:\n{e}"));
 	}
+
+	print_step("Finished", "");
+}
+
+fn print_step(step: impl AsRef<str>, msg: impl AsRef<str>) {
+	println!("{} {}", step.as_ref().bright_green().bold(), msg.as_ref());
+}
+
+fn exit_with_error(error: impl AsRef<str>) -> ! {
+	println!("{}", error.as_ref().red().bold());
+	exit(1);
 }
 
 #[derive(Parser)]
@@ -91,7 +98,7 @@ impl CliSubcommand {
 	) -> Result<(), GitProgressSyncError> {
 		match self {
 			Self::Load => {
-				println!("Removing old changes...");
+				print_step("Removing", "old changes...");
 				git_stash()?;
 				let drop_result = run_git_command(["stash".to_string(), "drop".to_string()]);
 				match drop_result {
@@ -107,7 +114,7 @@ impl CliSubcommand {
 					}
 				}
 
-				println!("Applying new changes...");
+				print_step("Applying", "new changes...");
 				run_git_command([
 					"apply".to_string(),
 					"--binary".to_string(),
@@ -116,16 +123,16 @@ impl CliSubcommand {
 				.map_err(|e| e.into())
 			}
 			CliSubcommand::Save => {
-				println!("Collecting changes...");
+				print_step("Collecting", "changes...");
 				git_stash()?;
 
-				println!("Saving changes...");
+				print_step("Saving", "changes...");
 				if let Some(stash_parent_directory) = stash_filepath.parent() {
 					std::fs::create_dir_all(stash_parent_directory)?;
 				}
 				save_stash(stash_filepath)?;
 
-				println!("Restoring changes...");
+				print_step("Restoring", "changes...");
 				let pop_result = run_git_command(["stash".to_string(), "pop".to_string()]);
 				match pop_result {
 					Err(RunGitError {
