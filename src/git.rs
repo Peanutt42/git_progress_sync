@@ -2,7 +2,14 @@ use crate::{GitProgressSyncError, RunGitError, RunGitErrorKind, StdErr};
 use std::{fs::File, io::Read, path::Path};
 
 pub fn git_stash() -> Result<(), RunGitError> {
-	run_git_command(["stash".to_string(), "-u".to_string()])
+	run_git_command([
+		"stash".to_string(),
+		"push".to_string(),
+		"-k".to_string(),
+		"-u".to_string(),
+		"-m".to_string(),
+		"git_progress_sync stash (temporary)".to_string(),
+	])
 }
 
 pub fn run_git_command(args: impl Into<Vec<String>>) -> Result<(), RunGitError> {
@@ -33,6 +40,7 @@ pub fn save_stash(output_filepath: impl AsRef<Path>) -> Result<(), GitProgressSy
 		"stash".to_string(),
 		"show".to_string(),
 		"--binary".to_string(),
+		"-u".to_string(),
 	];
 
 	let output_file = File::create(output_filepath).map_err(GitProgressSyncError::SaveFile)?;

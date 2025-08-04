@@ -37,15 +37,38 @@ impl Cli {
 			save_stash(self.stash_filepath)?;
 
 			println!("Restoring changes...");
-			run_git_command(["stash".to_string(), "pop".to_string()])?;
+			let pop_result = run_git_command(["stash".to_string(), "pop".to_string()]);
+			match pop_result {
+				Err(RunGitError {
+					kind: RunGitErrorKind::NonZeroExitCode { exit_code: 1, .. },
+					..
+				}) => {
+					// no changes to pop
+				}
+				_ => pop_result?,
+			}
 		} else {
 			println!("Removing old changes...");
 			git_stash()?;
-			run_git_command(["stash".to_string(), "drop".to_string()])?;
+			let drop_result = run_git_command(["stash".to_string(), "drop".to_string()]);
+			match drop_result {
+				Err(RunGitError {
+					kind: RunGitErrorKind::NonZeroExitCode { exit_code: 1, .. },
+					..
+				}) => {
+					// no stash to drop, because there were no uncommitted changes
+				}
+				_ => {
+					// return all other errors
+					drop_result?;
+				}
+			}
 
 			println!("Applying new changes...");
 			run_git_command([
 				"apply".to_string(),
+				"--binary".to_string(),
+				"--allow-empty".to_string(),
 				self.stash_filepath.to_string_lossy().into_owned(),
 			])?;
 		}
