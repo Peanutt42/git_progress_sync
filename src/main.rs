@@ -6,10 +6,14 @@ mod error;
 use error::{GitProgressSyncError, RunGitError, RunGitErrorKind, StdErr};
 
 mod git;
-use git::{get_git_current_branch_name, git_stash, run_git_command, save_stash};
+use git::{
+	get_git_current_branch_name, get_git_current_repo_name, git_stash, run_git_command, save_stash,
+};
 
 mod config;
 use config::{Config, LoadConfigError, SaveConfigError};
+
+use crate::git::get_git_current_repo_root_directory;
 
 fn main() {
 	let cli = Cli::parse();
@@ -59,20 +63,17 @@ struct Cli {
 
 impl Cli {
 	fn run(self, config_filepath: PathBuf, config: Config) -> Result<(), GitProgressSyncError> {
-		let repo_name = std::env::current_dir()
-			.expect("could not get the current working directory")
-			.file_name()
-			.expect("failed to get the filename of the current working directory")
-			.to_string_lossy()
-			.to_string();
+		let repo_name = get_git_current_repo_name()?;
 
 		let branch_name = get_git_current_branch_name()?;
 
 		let stash_filepath = config.get_stash_filepath(repo_name, branch_name);
 
+		let root_repo_path = get_git_current_repo_root_directory()?;
+
 		self.subcommand
 			.unwrap_or_default()
-			.run(config_filepath, stash_filepath)
+			.run(config_filepath, stash_filepath, root_repo_path)
 	}
 }
 
@@ -95,12 +96,16 @@ impl CliSubcommand {
 		&self,
 		config_filepath: PathBuf,
 		stash_filepath: PathBuf,
+		working_directory: PathBuf,
 	) -> Result<(), GitProgressSyncError> {
 		match self {
 			Self::Load => {
 				print_step("Removing", "old changes...");
-				git_stash()?;
-				let drop_result = run_git_command(["stash".to_string(), "drop".to_string()]);
+				git_stash(&working_directory)?;
+				let drop_result = run_git_command(
+					["stash".to_string(), "drop".to_string()],
+					&working_directory,
+				);
 				match drop_result {
 					Err(RunGitError {
 						kind: RunGitErrorKind::NonZeroExitCode { exit_code: 1, .. },
@@ -115,25 +120,29 @@ impl CliSubcommand {
 				}
 
 				print_step("Applying", "new changes...");
-				run_git_command([
-					"apply".to_string(),
-					"--binary".to_string(),
-					stash_filepath.to_string_lossy().into_owned(),
-				])
+				run_git_command(
+					[
+						"apply".to_string(),
+						"--binary".to_string(),
+						stash_filepath.to_string_lossy().into_owned(),
+					],
+					working_directory,
+				)
 				.map_err(|e| e.into())
 			}
 			CliSubcommand::Save => {
 				print_step("Collecting", "changes...");
-				git_stash()?;
+				git_stash(&working_directory)?;
 
 				print_step("Saving", "changes...");
 				if let Some(stash_parent_directory) = stash_filepath.parent() {
 					std::fs::create_dir_all(stash_parent_directory)?;
 				}
-				save_stash(stash_filepath)?;
+				save_stash(stash_filepath, &working_directory)?;
 
 				print_step("Restoring", "changes...");
-				let pop_result = run_git_command(["stash".to_string(), "pop".to_string()]);
+				let pop_result =
+					run_git_command(["stash".to_string(), "pop".to_string()], working_directory);
 				match pop_result {
 					Err(RunGitError {
 						kind: RunGitErrorKind::NonZeroExitCode { exit_code: 1, .. },
