@@ -11,11 +11,8 @@ pub enum GitProgressSyncError {
 	SaveStashfile(std::io::Error),
 	#[error("Failed to read stash file at {0}")]
 	ReadStashfile(std::io::Error),
-	#[error("Failed to find the stash {stash_name} with oid {stash_oid}")]
-	FailedToFindStash {
-		stash_name: String,
-		stash_oid: git2::Oid,
-	},
+	#[error("Failed to find the stash with oid {stash_oid}")]
+	FailedToFindStash { stash_oid: git2::Oid },
 	#[error(transparent)]
 	SaveConfig(#[from] SaveConfigError),
 	#[error(transparent)]

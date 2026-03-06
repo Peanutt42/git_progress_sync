@@ -68,22 +68,33 @@ impl CliSubcommand {
 		match self {
 			Self::Load => {
 				print_step("Removing", "previous changes...");
-				let tmp_stash_oid = stash_changes(repo, TMP_GIT_PROGRESS_SYNC_STASH_NAME)?;
+				let tmp_stash_oid = match stash_changes(repo, TMP_GIT_PROGRESS_SYNC_STASH_NAME) {
+					Ok(oid) => Some(oid),
+					// returns code=NotFound when there are no previous changes
+					Err(ref e) if e.code() == git2::ErrorCode::NotFound => None,
+					Err(e) => return Err(e.into()),
+				};
 
 				print_step("Applying", "new changes...");
 				match load_changes_from_file(repo, &stash_filepath) {
 					Ok(()) => {
-						print_step("Removing", "stashed previous changes...");
+						if let Some(tmp_stash_oid) = tmp_stash_oid {
+							print_step("Removing", "stashed previous changes...");
 
-						drop_stash(repo, TMP_GIT_PROGRESS_SYNC_STASH_NAME, &tmp_stash_oid)
+							drop_stash(repo, &tmp_stash_oid)?;
+						}
+						Ok(())
 					}
-					Err(e) => {
-						print_error(format!(
-							"failed to load newest changes: {e}\nrestoring previous changes..."
-						));
+					Err(e) => match tmp_stash_oid {
+						Some(tmp_stash_oid) => {
+							print_error(format!(
+								"failed to load newest changes: {e}\nrestoring previous changes..."
+							));
 
-						apply_stash(repo, TMP_GIT_PROGRESS_SYNC_STASH_NAME, &tmp_stash_oid)
-					}
+							apply_stash(repo, &tmp_stash_oid)
+						}
+						None => return Err(e),
+					},
 				}
 			}
 			CliSubcommand::Save => {

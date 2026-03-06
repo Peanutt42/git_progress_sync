@@ -44,13 +44,12 @@ pub fn stash_changes(repo: &mut Repository, stash_name: &str) -> Result<git2::Oi
 
 fn find_stash_index(
 	repo: &mut Repository,
-	stash_name: &str,
 	stash_oid: &git2::Oid,
 ) -> Result<usize, GitProgressSyncError> {
 	let mut stash_index = None;
 
-	repo.stash_foreach(|index, name, oid| -> bool {
-		let matches = name == stash_name && oid == stash_oid;
+	repo.stash_foreach(|index, _name, oid| -> bool {
+		let matches = oid == stash_oid;
 		if matches {
 			stash_index = Some(index);
 		}
@@ -58,26 +57,23 @@ fn find_stash_index(
 	})?;
 
 	stash_index.ok_or(GitProgressSyncError::FailedToFindStash {
-		stash_name: stash_name.to_string(),
 		stash_oid: *stash_oid,
 	})
 }
 
 pub fn apply_stash(
 	repo: &mut Repository,
-	stash_name: &str,
 	stash_oid: &git2::Oid,
 ) -> Result<(), GitProgressSyncError> {
-	let stash_index = find_stash_index(repo, stash_name, stash_oid)?;
+	let stash_index = find_stash_index(repo, stash_oid)?;
 	repo.stash_pop(stash_index, None).map_err(|e| e.into())
 }
 
 pub fn drop_stash(
 	repo: &mut Repository,
-	stash_name: &str,
 	stash_oid: &git2::Oid,
 ) -> Result<(), GitProgressSyncError> {
-	let stash_index = find_stash_index(repo, stash_name, stash_oid)?;
+	let stash_index = find_stash_index(repo, stash_oid)?;
 	repo.stash_drop(stash_index).map_err(|e| e.into())
 }
 
