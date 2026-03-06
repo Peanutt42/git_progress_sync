@@ -8,6 +8,7 @@ use crate::stash_changes;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use git2::Repository;
+use inquire::ui::RenderConfig;
 use std::{path::PathBuf, process::exit};
 
 pub fn print_step(step: impl AsRef<str>, msg: impl AsRef<str>) {
@@ -22,6 +23,7 @@ pub fn exit_with_error(error: impl AsRef<str>) -> ! {
 }
 
 #[derive(Parser)]
+#[command(version)]
 pub struct Cli {
 	#[command(subcommand)]
 	subcommand: Option<CliSubcommand>,
@@ -64,6 +66,7 @@ impl CliSubcommand {
 
 		match self {
 			Self::Load => {
+				print_step("Collecting", "all available stashes...");
 				let stash_filepaths = config.get_all_stash_filepaths(&repo_name, &branch_name);
 				if stash_filepaths.is_empty() {
 					print_error(format!(
@@ -134,16 +137,43 @@ impl CliSubcommand {
 	}
 
 	fn choose_stash_filepath(stash_filepaths: &[PathBuf]) -> Option<usize> {
-		let options = stash_filepaths
+		let current_system_identifier = Config::get_current_system_identifier();
+
+		let stash_filepath_to_option = |p: &PathBuf| -> Option<String> {
+			p.file_stem().and_then(|s| s.to_str()).map(str::to_string)
+		};
+
+		let mut options = stash_filepaths
 			.iter()
-			.filter_map(|f| f.file_stem().and_then(|f| f.to_str()).map(str::to_string))
+			.filter_map(stash_filepath_to_option)
 			.collect::<Vec<String>>();
+
+		let last_option_index = options.len() - 1;
+
+		// move the stash of this device to the end/bottom, as you rarely want that option
+		if let Some(current_device_option_index) =
+			options.iter().position(|i| *i == current_system_identifier)
+		{
+			let styled_this_device = "(this device)".green();
+			options[current_device_option_index] = format!(
+				"{} {styled_this_device}",
+				options[current_device_option_index]
+			);
+			options.swap(current_device_option_index, last_option_index);
+		}
+
+		let invisible_prompt_prefix = inquire::ui::Styled::new(" ");
+		let render_config = RenderConfig::default().with_prompt_prefix(invisible_prompt_prefix);
 
 		loop {
 			match inquire::Select::new(
-				"There are multiple stashes from diverent devices. Please choose one or press Esc or Ctrl+C to cancel:",
+				"There are multiple stashes from different devices:",
 				options.clone(),
 			)
+			.with_help_message(
+				"↑↓ to move, enter to select, type to filter, or press Esc to cancel",
+			)
+			.with_render_config(render_config)
 			.raw_prompt_skippable()
 			{
 				Ok(selected_option) => return selected_option.map(|o| o.index),

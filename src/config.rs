@@ -75,9 +75,7 @@ impl Config {
 	) -> PathBuf {
 		let repo_dir = self.root_directory.join(repo_name.as_ref());
 		let branch_dir = repo_dir.join(branch_name.as_ref());
-		let username = whoami::username().expect("failed to get username");
-		let hostname = whoami::hostname().expect("failed to get hostname");
-		let system_identifier = format!("{username}@{hostname}");
+		let system_identifier = Self::get_current_system_identifier();
 		branch_dir.join(format!("{}.stash", system_identifier))
 	}
 
@@ -97,5 +95,12 @@ impl Config {
 					.collect::<Vec<_>>()
 			})
 			.unwrap_or_default()
+	}
+
+	/// "username@hostname": used to identify what stash corresponds to what device/system
+	pub fn get_current_system_identifier() -> String {
+		let username = whoami::username().expect("failed to get username");
+		let hostname = whoami::hostname().expect("failed to get hostname");
+		format!("{username}@{hostname}")
 	}
 }
