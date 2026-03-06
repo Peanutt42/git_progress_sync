@@ -67,16 +67,35 @@ impl Config {
 		Some(Self::get_project_dirs()?.data_local_dir().join("stashes"))
 	}
 
-	// TODO: maybe include way to store multiple stashes for a single branch
-	pub fn get_stash_filepath(
+	/// returns the stash filepath of this current system/device
+	pub fn get_stash_filepath_for_current_system(
 		&self,
 		repo_name: impl AsRef<str>,
 		branch_name: impl AsRef<str>,
 	) -> PathBuf {
-		self.root_directory.join(format!(
-			"{} - {}.stash",
-			repo_name.as_ref(),
-			branch_name.as_ref()
-		))
+		let repo_dir = self.root_directory.join(repo_name.as_ref());
+		let branch_dir = repo_dir.join(branch_name.as_ref());
+		let username = whoami::username().expect("failed to get username");
+		let hostname = whoami::hostname().expect("failed to get hostname");
+		let system_identifier = format!("{username}@{hostname}");
+		branch_dir.join(format!("{}.stash", system_identifier))
+	}
+
+	/// returns all available stashes (filename without extension (filestem) are username@hostname)
+	pub fn get_all_stash_filepaths(
+		&self,
+		repo_name: impl AsRef<str>,
+		branch_name: impl AsRef<str>,
+	) -> Vec<PathBuf> {
+		let repo_dir = self.root_directory.join(repo_name.as_ref());
+		let branch_dir = repo_dir.join(branch_name.as_ref());
+		std::fs::read_dir(branch_dir)
+			.map(|entries| {
+				entries
+					.into_iter()
+					.filter_map(|e| e.ok().map(|e| e.path().to_path_buf()))
+					.collect::<Vec<_>>()
+			})
+			.unwrap_or_default()
 	}
 }
