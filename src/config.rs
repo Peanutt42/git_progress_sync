@@ -30,6 +30,10 @@ impl Config {
 		Config { root_directory }
 	}
 
+	pub fn load_with_current_repo() -> Option<Self> {
+		Self::get_default_root_directory().map(|root_directory| Self { root_directory })
+	}
+
 	pub fn load(config_filepath: impl AsRef<Path>) -> Result<Self, LoadConfigError> {
 		let toml = std::fs::read_to_string(config_filepath).map_err(|e| {
 			if e.kind() == std::io::ErrorKind::NotFound {
@@ -61,10 +65,6 @@ impl Config {
 
 	fn get_default_root_directory() -> Option<PathBuf> {
 		Some(Self::get_project_dirs()?.data_local_dir().join("stashes"))
-	}
-
-	pub fn default() -> Option<Self> {
-		Self::get_default_root_directory().map(|root_directory| Self { root_directory })
 	}
 
 	// TODO: maybe include way to store multiple stashes for a single branch

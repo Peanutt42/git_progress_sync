@@ -1,155 +1,122 @@
-use crate::{GitProgressSyncError, RunGitError, RunGitErrorKind, StdErr};
-use std::{
-	fs::File,
-	io::Read,
-	path::{Path, PathBuf},
-};
+use crate::GitProgressSyncError;
+use git2::{ApplyLocation, Diff, DiffFormat, DiffOptions, Repository, StashFlags};
+use std::fs;
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
 
-pub fn git_stash(working_directory: impl AsRef<Path>) -> Result<(), RunGitError> {
-	run_git_command(
-		[
-			"stash".to_string(),
-			"push".to_string(),
-			"-k".to_string(),
-			"-u".to_string(),
-			"-m".to_string(),
-			"git_progress_sync stash (temporary)".to_string(),
-		],
-		working_directory,
-	)
-}
-
-pub fn run_git_command(
-	args: impl Into<Vec<String>>,
-	working_directory: impl AsRef<Path>,
-) -> Result<(), RunGitError> {
-	let args = args.into();
-
-	let output = std::process::Command::new("git")
-		.args(&args)
-		.current_dir(working_directory)
-		.output()
-		.map_err(|e| RunGitError {
-			args: args.clone(),
-			kind: RunGitErrorKind::StdioError(e),
-		})?;
-	if output.status.success() {
-		Ok(())
-	} else {
-		Err(RunGitError {
-			args,
-			kind: RunGitErrorKind::NonZeroExitCode {
-				exit_code: output.status.code().unwrap_or(-1),
-				stderr: StdErr::new(output.stderr),
-			},
-		})
-	}
-}
-
-pub fn save_stash(
-	output_filepath: impl AsRef<Path>,
-	working_directory: impl AsRef<Path>,
+pub fn save_changes_to_file(
+	repo: &Repository,
+	output_path: impl AsRef<Path>,
 ) -> Result<(), GitProgressSyncError> {
-	let args = vec![
-		"stash".to_string(),
-		"show".to_string(),
-		"--binary".to_string(),
-		"-u".to_string(),
-	];
+	let head_commit = repo.head()?.peel_to_commit()?;
+	let head_tree = head_commit.tree()?;
 
-	let output_file = File::create(output_filepath).map_err(GitProgressSyncError::SaveFile)?;
+	let mut opts = DiffOptions::new();
+	opts.include_untracked(true)
+		.recurse_untracked_dirs(true)
+		.show_untracked_content(true)
+		.ignore_submodules(false);
 
-	let mut child = std::process::Command::new("git")
-		.args(&args)
-		.current_dir(working_directory)
-		.stdout(output_file)
-		.stderr(std::process::Stdio::piped())
-		.spawn()
-		.map_err(GitProgressSyncError::Stdio)?;
+	let diff = repo.diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut opts))?;
 
-	let exit_status = child.wait()?;
-	if exit_status.success() {
-		Ok(())
-	} else {
-		let mut stderr_output: Vec<u8> = Vec::new();
-		if let Some(mut stderr) = child.stderr.take() {
-			stderr.read_to_end(&mut stderr_output)?;
+	let patch_file =
+		fs::File::create(output_path.as_ref()).map_err(GitProgressSyncError::SaveStashfile)?;
+	let mut path_file_writer = BufWriter::new(patch_file);
+
+	diff.print(DiffFormat::Patch, |_delta, _hunk, line| {
+		let origin = line.origin();
+		if matches!(origin, '+' | '-' | ' ') && path_file_writer.write_all(&[origin as u8]).is_err()
+		{
+			return false;
 		}
-
-		Err(RunGitError {
-			args,
-			kind: RunGitErrorKind::NonZeroExitCode {
-				exit_code: exit_status.code().unwrap_or(-1),
-				stderr: StdErr::new(stderr_output),
-			},
-		}
-		.into())
-	}
+		path_file_writer.write_all(line.content()).is_ok()
+	})
+	.map_err(|e| e.into())
 }
 
-/// by repo name, the name of the directory containing the .git directory is meant
-pub fn get_git_current_repo_name() -> Result<String, RunGitError> {
-	match get_git_current_repo_root_directory()?.file_name() {
+pub fn stash_changes(repo: &mut Repository, stash_name: &str) -> Result<git2::Oid, git2::Error> {
+	let signature = repo.signature()?;
+
+	let oid = repo.stash_save(&signature, stash_name, Some(StashFlags::INCLUDE_UNTRACKED))?;
+
+	Ok(oid)
+}
+
+fn find_stash_index(
+	repo: &mut Repository,
+	stash_name: &str,
+	stash_oid: &git2::Oid,
+) -> Result<usize, GitProgressSyncError> {
+	let mut stash_index = None;
+
+	repo.stash_foreach(|index, name, oid| -> bool {
+		let matches = name == stash_name && oid == stash_oid;
+		if matches {
+			stash_index = Some(index);
+		}
+		!matches
+	})?;
+
+	stash_index.ok_or(GitProgressSyncError::FailedToFindStash {
+		stash_name: stash_name.to_string(),
+		stash_oid: *stash_oid,
+	})
+}
+
+pub fn apply_stash(
+	repo: &mut Repository,
+	stash_name: &str,
+	stash_oid: &git2::Oid,
+) -> Result<(), GitProgressSyncError> {
+	let stash_index = find_stash_index(repo, stash_name, stash_oid)?;
+	repo.stash_pop(stash_index, None).map_err(|e| e.into())
+}
+
+pub fn drop_stash(
+	repo: &mut Repository,
+	stash_name: &str,
+	stash_oid: &git2::Oid,
+) -> Result<(), GitProgressSyncError> {
+	let stash_index = find_stash_index(repo, stash_name, stash_oid)?;
+	repo.stash_drop(stash_index).map_err(|e| e.into())
+}
+
+pub fn load_changes_from_file(
+	repo: &mut Repository,
+	pathfile_path: impl AsRef<Path>,
+) -> Result<(), GitProgressSyncError> {
+	let patch_bytes =
+		fs::read(pathfile_path.as_ref()).map_err(GitProgressSyncError::ReadStashfile)?;
+
+	let diff = Diff::from_buffer(&patch_bytes)?;
+
+	repo.apply(&diff, ApplyLocation::WorkDir, None)
+		.map_err(|e| e.into())
+}
+
+pub fn get_git_current_repo_name(repo: &Repository) -> Result<String, GitProgressSyncError> {
+	match get_git_current_repo_root_directory(repo)?.file_name() {
 		Some(filename) => Ok(filename.to_string_lossy().to_string()),
-		None => Err(RunGitError {
-			args: vec![],
-			kind: RunGitErrorKind::StdioError(std::io::Error::other(
-				"failed to get root git repo directory filename",
-			)),
-		}),
+		None => Err(std::io::Error::other("failed to get root git repo directory filename").into()),
 	}
 }
 
-pub fn get_git_current_repo_root_directory() -> Result<PathBuf, RunGitError> {
-	let args = vec!["rev-parse".to_string(), "--show-toplevel".to_string()];
+pub fn get_git_current_repo_root_directory(
+	repo: &Repository,
+) -> Result<PathBuf, GitProgressSyncError> {
+	let path = repo
+		.workdir()
+		.ok_or_else(|| std::io::Error::other("failed to get working directory"))?;
 
-	let output = std::process::Command::new("git")
-		.args(&args)
-		.output()
-		.map_err(|e| RunGitError {
-			args: args.clone(),
-			kind: RunGitErrorKind::StdioError(e),
-		})?;
-
-	if output.status.success() {
-		Ok(PathBuf::from(
-			String::from_utf8_lossy(&output.stdout).trim().to_string(),
-		))
-	} else {
-		Err(RunGitError {
-			args,
-			kind: RunGitErrorKind::NonZeroExitCode {
-				exit_code: output.status.code().unwrap_or(-1),
-				stderr: StdErr::new(output.stderr),
-			},
-		})
-	}
+	Ok(path.to_path_buf())
 }
 
-pub fn get_git_current_branch_name() -> Result<String, RunGitError> {
-	let args = vec![
-		"rev-parse".to_string(),
-		"--abbrev-ref".to_string(),
-		"HEAD".to_string(),
-	];
+pub fn get_git_current_branch_name(repo: &Repository) -> Result<String, GitProgressSyncError> {
+	let head = repo.head()?;
 
-	let output = std::process::Command::new("git")
-		.args(&args)
-		.output()
-		.map_err(|e| RunGitError {
-			args: args.clone(),
-			kind: RunGitErrorKind::StdioError(e),
-		})?;
+	let name = head
+		.shorthand()
+		.ok_or_else(|| std::io::Error::other("failed to get branch name"))?;
 
-	if output.status.success() {
-		Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-	} else {
-		Err(RunGitError {
-			args,
-			kind: RunGitErrorKind::NonZeroExitCode {
-				exit_code: output.status.code().unwrap_or(-1),
-				stderr: StdErr::new(output.stderr),
-			},
-		})
-	}
+	Ok(name.to_string())
 }

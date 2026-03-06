@@ -8,6 +8,12 @@ For now, saves to a local file, that could be OneDrive using rclone.
 
 ## Installation
 
+To build, you need some system packages: the openssl dev package and the pkg-config package
+<br>
+If you use NixOS, you can just run `nix develop`
+<br>
+To install, just run:
+
 ```bash
 cargo install --path .
 ```
