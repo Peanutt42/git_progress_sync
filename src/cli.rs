@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::error::GitProgressSyncError;
 use crate::git::{
-	apply_stash, drop_stash, get_git_current_branch_name, get_git_current_repo_name,
+	apply_stash, drop_stash, get_git_current_branch_name, get_git_repo_name,
 	load_changes_from_file, save_changes_to_file,
 };
 use crate::stash_changes;
@@ -60,7 +60,7 @@ impl CliSubcommand {
 		config_filepath: PathBuf,
 		repo: &mut Repository,
 	) -> Result<(), GitProgressSyncError> {
-		let repo_name = get_git_current_repo_name(repo)?;
+		let repo_name = get_git_repo_name(repo)?;
 
 		let branch_name = get_git_current_branch_name(repo)?;
 

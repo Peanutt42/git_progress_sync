@@ -2,7 +2,7 @@ use crate::GitProgressSyncError;
 use git2::{ApplyLocation, Diff, DiffFormat, DiffOptions, Repository, StashFlags};
 use std::fs;
 use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub fn save_changes_to_file(
 	repo: &Repository,
@@ -90,21 +90,31 @@ pub fn load_changes_from_file(
 		.map_err(|e| e.into())
 }
 
-pub fn get_git_current_repo_name(repo: &Repository) -> Result<String, GitProgressSyncError> {
-	match get_git_current_repo_root_directory(repo)?.file_name() {
-		Some(filename) => Ok(filename.to_string_lossy().to_string()),
-		None => Err(std::io::Error::other("failed to get root git repo directory filename").into()),
-	}
+fn try_extract_repo_name_from_git_origin_remote(repo: &Repository) -> Option<String> {
+	let origin_remote = repo.find_remote("origin").ok()?;
+	let url = origin_remote.url()?;
+
+	url.trim_end_matches(".git")
+		.rsplit_once('/')
+		.map(|(_, repo_name_part)| repo_name_part.to_string())
 }
 
-pub fn get_git_current_repo_root_directory(
-	repo: &Repository,
-) -> Result<PathBuf, GitProgressSyncError> {
-	let path = repo
-		.workdir()
-		.ok_or_else(|| std::io::Error::other("failed to get working directory"))?;
-
-	Ok(path.to_path_buf())
+/// tries to get the 'origin' remote name for the repo by parsing the remote url
+/// if there is no 'origin' remote or we cannot parse the remote url, we fallback to the directory
+/// name of the repo
+pub fn get_git_repo_name(repo: &Repository) -> Result<String, GitProgressSyncError> {
+	match try_extract_repo_name_from_git_origin_remote(repo) {
+		Some(repo_name) => Ok(repo_name),
+		None => repo
+			.workdir()
+			.ok_or(GitProgressSyncError::FailedToDetermineRepoName)
+			.and_then(|workdir| {
+				workdir
+					.file_name()
+					.and_then(|os_str| os_str.to_str().map(str::to_string))
+					.ok_or(GitProgressSyncError::FailedToDetermineRepoName)
+			}),
+	}
 }
 
 pub fn get_git_current_branch_name(repo: &Repository) -> Result<String, GitProgressSyncError> {

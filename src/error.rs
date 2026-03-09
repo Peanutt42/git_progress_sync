@@ -13,6 +13,10 @@ pub enum GitProgressSyncError {
 	ReadStashfile(std::io::Error),
 	#[error("Failed to find the stash with oid {stash_oid}")]
 	FailedToFindStash { stash_oid: git2::Oid },
+	#[error(
+		"Failed to determine repo name: this repo must have no 'origin' remote and be bare bones with no workdir set"
+	)]
+	FailedToDetermineRepoName,
 	#[error(transparent)]
 	SaveConfig(#[from] SaveConfigError),
 	#[error(transparent)]
