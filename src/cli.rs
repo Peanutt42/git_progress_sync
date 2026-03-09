@@ -4,7 +4,7 @@ use crate::git::{
 	apply_stash, drop_stash, get_git_current_branch_name, get_git_repo_name,
 	load_changes_from_file, save_changes_to_file,
 };
-use crate::stash_changes;
+use crate::{pretty_format_system_time, stash_changes};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use git2::Repository;
@@ -46,6 +46,8 @@ enum CliSubcommand {
 	Load,
 	/// saves current changes to a stash file in the root directory
 	Save,
+	/// lists all available stashes in the root directory
+	List,
 	/// configures the root directory in the config.toml file
 	Configure {
 		#[arg(long)]
@@ -139,6 +141,42 @@ impl CliSubcommand {
 				}
 				save_changes_to_file(repo, &stash_filepath)
 			}
+			CliSubcommand::List => {
+				let stash_filepaths = config.get_all_stash_filepaths(&repo_name, &branch_name);
+				if stash_filepaths.is_empty() {
+					println!(
+						"there are no stashes available for branch {branch_name} in repo {repo_name}"
+					);
+				} else {
+					let current_system_identifier = Config::get_current_system_identifier();
+
+					for stash_filepath in stash_filepaths {
+						if let Some(identifier) = stash_filepath
+							.file_stem()
+							.and_then(|stem| stem.to_str().map(str::to_string))
+						{
+							let last_modified_formatted = stash_filepath
+								.metadata()
+								.ok()
+								.and_then(|m| m.modified().ok())
+								.map(pretty_format_system_time)
+								.unwrap_or_default();
+
+							if identifier == current_system_identifier {
+								println!(
+									"  {}\t{}\t{}",
+									identifier.cyan(),
+									last_modified_formatted,
+									"(this device)".green()
+								)
+							} else {
+								println!("  {}\t{}", identifier.cyan(), last_modified_formatted)
+							}
+						}
+					}
+				}
+				Ok(())
+			}
 			CliSubcommand::Configure { root_directory } => {
 				let new_config = Config::new(root_directory.to_path_buf());
 				new_config.save(&config_filepath)?;
@@ -150,24 +188,41 @@ impl CliSubcommand {
 	fn choose_stash_filepath(stash_filepaths: &[PathBuf]) -> Option<usize> {
 		let current_system_identifier = Config::get_current_system_identifier();
 
-		let stash_filepath_to_option = |p: &PathBuf| -> Option<String> {
+		let get_filepath_filestem = |p: &PathBuf| -> Option<String> {
 			p.file_stem().and_then(|s| s.to_str()).map(str::to_string)
 		};
 
-		let mut options = stash_filepaths
+		let stash_filepaths_and_identifiers = stash_filepaths
 			.iter()
-			.filter_map(stash_filepath_to_option)
+			.filter_map(|filepath| {
+				get_filepath_filestem(filepath).map(|filestem| (filepath.clone(), filestem))
+			})
+			.collect::<Vec<(PathBuf, String)>>();
+		let current_device_option_index = stash_filepaths_and_identifiers
+			.iter()
+			.position(|(_filepath, i)| *i == current_system_identifier);
+
+		let mut options = stash_filepaths_and_identifiers
+			.into_iter()
+			.map(|(stash_filepath, identifier)| {
+				let last_modified_formatted = stash_filepath
+					.metadata()
+					.ok()
+					.and_then(|m| m.modified().ok())
+					.map(pretty_format_system_time)
+					.unwrap_or_default();
+
+				format!("{identifier}\t{last_modified_formatted}")
+			})
 			.collect::<Vec<String>>();
 
 		let last_option_index = options.len() - 1;
 
 		// move the stash of this device to the end/bottom, as you rarely want that option
-		if let Some(current_device_option_index) =
-			options.iter().position(|i| *i == current_system_identifier)
-		{
+		if let Some(current_device_option_index) = current_device_option_index {
 			let styled_this_device = "(this device)".green();
 			options[current_device_option_index] = format!(
-				"{} {styled_this_device}",
+				"{}\t{styled_this_device}",
 				options[current_device_option_index]
 			);
 			options.swap(current_device_option_index, last_option_index);

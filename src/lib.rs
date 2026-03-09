@@ -9,3 +9,6 @@ pub use config::{Config, LoadConfigError, SaveConfigError};
 
 mod cli;
 pub use cli::{Cli, exit_with_error, print_error, print_step};
+
+mod pretty_format_system_time;
+pub use pretty_format_system_time::pretty_format_system_time;

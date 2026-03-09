@@ -1,6 +1,6 @@
 [package]
 name = "git_progress_sync"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 
 [dependencies]
@@ -14,3 +14,5 @@ thiserror = "2.0.18"
 toml = "1.0.4"
 whoami = "2.1.1"
 inquire = "0.9.4"
+chrono = { version = "0.4.44", features = ["unstable-locales"] }
+sys-locale = "0.3.2"

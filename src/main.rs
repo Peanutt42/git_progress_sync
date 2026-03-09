@@ -1,5 +1,5 @@
 use clap::Parser;
-use git_progress_sync::{Cli, Config, LoadConfigError, exit_with_error, print_step};
+use git_progress_sync::{Cli, Config, LoadConfigError, exit_with_error};
 
 fn main() {
 	let cli = Cli::parse();
@@ -28,6 +28,4 @@ fn main() {
 	if let Err(e) = cli.run(config_filepath, config) {
 		exit_with_error(format!("git progress sync failed:\n{e}"));
 	}
-
-	print_step("Finished", "");
 }
