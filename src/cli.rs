@@ -80,11 +80,9 @@ impl CliSubcommand {
 				let stash_filepath = if stash_filepaths.len() == 1
 					&& let Some(stash_filepath) = stash_filepaths.first()
 				{
-					stash_filepath
+					stash_filepath.clone()
 				} else {
-					match Self::choose_stash_filepath(&stash_filepaths)
-						.and_then(|chosen_index| stash_filepaths.get(chosen_index))
-					{
+					match Self::choose_stash_filepath(&stash_filepaths) {
 						Some(stash_filepath) => stash_filepath,
 						None => return Ok(()),
 					}
@@ -185,7 +183,7 @@ impl CliSubcommand {
 		}
 	}
 
-	fn choose_stash_filepath(stash_filepaths: &[PathBuf]) -> Option<usize> {
+	fn choose_stash_filepath(stash_filepaths: &[PathBuf]) -> Option<PathBuf> {
 		let current_system_identifier = Config::get_current_system_identifier();
 
 		let get_filepath_filestem = |p: &PathBuf| -> Option<String> {
@@ -203,6 +201,7 @@ impl CliSubcommand {
 			.position(|(_filepath, i)| *i == current_system_identifier);
 
 		let mut options = stash_filepaths_and_identifiers
+			.clone()
 			.into_iter()
 			.map(|(stash_filepath, identifier)| {
 				let last_modified_formatted = stash_filepath
@@ -242,7 +241,13 @@ impl CliSubcommand {
 			.with_render_config(render_config)
 			.raw_prompt_skippable()
 			{
-				Ok(selected_option) => return selected_option.map(|o| o.index),
+				Ok(selected_option) => {
+					return selected_option.and_then(|o| {
+						stash_filepaths_and_identifiers
+							.get(o.index)
+							.map(|(stash_filepath, _)| stash_filepath.clone())
+					});
+				}
 				Err(e) => {
 					print_error(format!("something went wrong: {e}, please try again"));
 				}
