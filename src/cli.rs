@@ -184,46 +184,55 @@ impl CliSubcommand {
 	}
 
 	fn choose_stash_filepath(stash_filepaths: &[PathBuf]) -> Option<PathBuf> {
+		#[derive(Clone)]
+		struct StashFilepathOption {
+			filepath: PathBuf,
+			identifier: String,
+			is_current_device: bool,
+			last_modified_formatted: String,
+		}
+		impl std::fmt::Display for StashFilepathOption {
+			fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+				write!(f, "{}\t{}", self.identifier, self.last_modified_formatted)?;
+				if self.is_current_device {
+					write!(f, "\t{}", "(this device)".green())
+				} else {
+					Ok(())
+				}
+			}
+		}
+
 		let current_system_identifier = Config::get_current_system_identifier();
 
 		let get_filepath_filestem = |p: &PathBuf| -> Option<String> {
 			p.file_stem().and_then(|s| s.to_str()).map(str::to_string)
 		};
 
-		let stash_filepaths_and_identifiers = stash_filepaths
+		let mut options = stash_filepaths
 			.iter()
 			.filter_map(|filepath| {
-				get_filepath_filestem(filepath).map(|filestem| (filepath.clone(), filestem))
-			})
-			.collect::<Vec<(PathBuf, String)>>();
-		let current_device_option_index = stash_filepaths_and_identifiers
-			.iter()
-			.position(|(_filepath, i)| *i == current_system_identifier);
-
-		let mut options = stash_filepaths_and_identifiers
-			.clone()
-			.into_iter()
-			.map(|(stash_filepath, identifier)| {
-				let last_modified_formatted = stash_filepath
+				let identifier = get_filepath_filestem(filepath)?;
+				let is_current_device = identifier == current_system_identifier;
+				let last_modified_formatted = filepath
 					.metadata()
 					.ok()
 					.and_then(|m| m.modified().ok())
-					.map(pretty_format_system_time)
-					.unwrap_or_default();
+					.map(pretty_format_system_time)?;
 
-				format!("{identifier}\t{last_modified_formatted}")
+				Some(StashFilepathOption {
+					filepath: filepath.clone(),
+					identifier,
+					is_current_device,
+					last_modified_formatted,
+				})
 			})
-			.collect::<Vec<String>>();
+			.collect::<Vec<StashFilepathOption>>();
 
 		let last_option_index = options.len() - 1;
 
-		// move the stash of this device to the end/bottom, as you rarely want that option
-		if let Some(current_device_option_index) = current_device_option_index {
-			let styled_this_device = "(this device)".green();
-			options[current_device_option_index] = format!(
-				"{}\t{styled_this_device}",
-				options[current_device_option_index]
-			);
+		if let Some(current_device_option_index) =
+			options.iter().position(|options| options.is_current_device)
+		{
 			options.swap(current_device_option_index, last_option_index);
 		}
 
@@ -242,11 +251,7 @@ impl CliSubcommand {
 			.raw_prompt_skippable()
 			{
 				Ok(selected_option) => {
-					return selected_option.and_then(|o| {
-						stash_filepaths_and_identifiers
-							.get(o.index)
-							.map(|(stash_filepath, _)| stash_filepath.clone())
-					});
+					return selected_option.map(|o| o.value.filepath);
 				}
 				Err(e) => {
 					print_error(format!("something went wrong: {e}, please try again"));
