@@ -9,6 +9,7 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 use git2::Repository;
 use inquire::ui::RenderConfig;
+use std::time::SystemTime;
 use std::{path::PathBuf, process::exit};
 
 pub fn print_step(step: impl AsRef<str>, msg: impl AsRef<str>) {
@@ -146,30 +147,22 @@ impl CliSubcommand {
 						"there are no stashes available for branch {branch_name} in repo {repo_name}"
 					);
 				} else {
-					let current_system_identifier = Config::get_current_system_identifier();
+					let options = create_stash_filepath_options(&stash_filepaths);
 
-					for stash_filepath in stash_filepaths {
-						if let Some(identifier) = stash_filepath
-							.file_stem()
-							.and_then(|stem| stem.to_str().map(str::to_string))
-						{
-							let last_modified_formatted = stash_filepath
-								.metadata()
-								.ok()
-								.and_then(|m| m.modified().ok())
-								.map(pretty_format_system_time)
-								.unwrap_or_default();
-
-							if identifier == current_system_identifier {
-								println!(
-									"  {}\t{}\t{}",
-									identifier.cyan(),
-									last_modified_formatted,
-									"(this device)".green()
-								)
-							} else {
-								println!("  {}\t{}", identifier.cyan(), last_modified_formatted)
-							}
+					for option in options {
+						if option.is_current_device {
+							println!(
+								"  {}\t{}\t{}",
+								option.identifier.cyan(),
+								option.last_modified_formatted,
+								"(this device)".green()
+							);
+						} else {
+							println!(
+								"  {}\t{}",
+								option.identifier.cyan(),
+								option.last_modified_formatted
+							);
 						}
 					}
 				}
@@ -184,57 +177,7 @@ impl CliSubcommand {
 	}
 
 	fn choose_stash_filepath(stash_filepaths: &[PathBuf]) -> Option<PathBuf> {
-		#[derive(Clone)]
-		struct StashFilepathOption {
-			filepath: PathBuf,
-			identifier: String,
-			is_current_device: bool,
-			last_modified_formatted: String,
-		}
-		impl std::fmt::Display for StashFilepathOption {
-			fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-				write!(f, "{}\t{}", self.identifier, self.last_modified_formatted)?;
-				if self.is_current_device {
-					write!(f, "\t{}", "(this device)".green())
-				} else {
-					Ok(())
-				}
-			}
-		}
-
-		let current_system_identifier = Config::get_current_system_identifier();
-
-		let get_filepath_filestem = |p: &PathBuf| -> Option<String> {
-			p.file_stem().and_then(|s| s.to_str()).map(str::to_string)
-		};
-
-		let mut options = stash_filepaths
-			.iter()
-			.filter_map(|filepath| {
-				let identifier = get_filepath_filestem(filepath)?;
-				let is_current_device = identifier == current_system_identifier;
-				let last_modified_formatted = filepath
-					.metadata()
-					.ok()
-					.and_then(|m| m.modified().ok())
-					.map(pretty_format_system_time)?;
-
-				Some(StashFilepathOption {
-					filepath: filepath.clone(),
-					identifier,
-					is_current_device,
-					last_modified_formatted,
-				})
-			})
-			.collect::<Vec<StashFilepathOption>>();
-
-		let last_option_index = options.len() - 1;
-
-		if let Some(current_device_option_index) =
-			options.iter().position(|options| options.is_current_device)
-		{
-			options.swap(current_device_option_index, last_option_index);
-		}
+		let options = create_stash_filepath_options(stash_filepaths);
 
 		let invisible_prompt_prefix = inquire::ui::Styled::new("");
 		let render_config = RenderConfig::default().with_prompt_prefix(invisible_prompt_prefix);
@@ -259,6 +202,64 @@ impl CliSubcommand {
 			}
 		}
 	}
+}
+
+#[derive(Clone)]
+struct StashFilepathOption {
+	filepath: PathBuf,
+	identifier: String,
+	is_current_device: bool,
+	last_modified: SystemTime,
+	last_modified_formatted: String,
+}
+impl std::fmt::Display for StashFilepathOption {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}\t{}", self.identifier, self.last_modified_formatted)?;
+		if self.is_current_device {
+			write!(f, "\t{}", "(this device)".green())
+		} else {
+			Ok(())
+		}
+	}
+}
+
+fn create_stash_filepath_options(stash_filepaths: &[PathBuf]) -> Vec<StashFilepathOption> {
+	let current_system_identifier = Config::get_current_system_identifier();
+
+	let get_filepath_filestem = |p: &PathBuf| -> Option<String> {
+		p.file_stem().and_then(|s| s.to_str()).map(str::to_string)
+	};
+
+	let mut options = stash_filepaths
+		.iter()
+		.filter_map(|filepath| {
+			let identifier = get_filepath_filestem(filepath)?;
+			let is_current_device = identifier == current_system_identifier;
+			let last_modified = filepath.metadata().ok().and_then(|m| m.modified().ok())?;
+			let last_modified_formatted = pretty_format_system_time(last_modified);
+
+			Some(StashFilepathOption {
+				filepath: filepath.clone(),
+				identifier,
+				is_current_device,
+				last_modified,
+				last_modified_formatted,
+			})
+		})
+		.collect::<Vec<StashFilepathOption>>();
+
+	// sorts options by latest to oldest
+	options.sort_by(|a, b| b.last_modified.cmp(&a.last_modified));
+
+	let last_option_index = options.len() - 1;
+
+	if let Some(current_device_option_index) =
+		options.iter().position(|options| options.is_current_device)
+	{
+		options.swap(current_device_option_index, last_option_index);
+	}
+
+	options
 }
 
 pub const TMP_GIT_PROGRESS_SYNC_STASH_NAME: &str =
