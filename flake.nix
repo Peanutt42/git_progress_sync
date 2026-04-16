@@ -31,7 +31,7 @@
       };
 
       overlays.default = final: prev: {
-        git_progress_sync = self.packages.${final.system}.default;
+        git_progress_sync = self.packages.${final.stdenv.hostPlatform.system}.default;
       };
 
       devShells.${system}.default = pkgs.mkShell {
