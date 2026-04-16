@@ -1,21 +1,40 @@
 {
-  description = "Development environment for git_progress_sync";
+  description = "git_progress_sync synchronizes git changes between multiple devices";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
-  outputs = { nixpkgs, ... }:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      rust-overlay,
+    }:
     let
-      pkgs = import nixpkgs { system = "x86_64-linux"; };
+      system = "x86_64-linux";
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [ rust-overlay.overlays.default ];
+      };
+      rustToolchain = pkgs.rust-bin.stable.latest.default;
     in
     {
-      devShells.x86_64-linux.default = pkgs.mkShell {
-        buildInputs = with pkgs; [
-          pkg-config
-          openssl
+      packages.${system}.default = pkgs.rustPlatform.buildRustPackage {
+        pname = "git_progress_sync";
+        version = "0.2.1";
+        src = ./.;
+        cargoLock.lockFile = ./Cargo.lock;
+        nativeBuildInputs = [ pkgs.pkg-config ];
+        buildInputs = [ pkgs.openssl ];
+      };
 
-		  just
+      devShells.${system}.default = pkgs.mkShell {
+        buildInputs = [
+          rustToolchain
+          pkgs.pkg-config
+          pkgs.openssl
         ];
       };
     };
