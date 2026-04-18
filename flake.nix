@@ -33,10 +33,6 @@
           buildInputs = [ pkgs.openssl ];
         };
 
-        overlays.default = final: prev: {
-          git_progress_sync = self.packages.${final.stdenv.hostPlatform.system}.default;
-        };
-
         devShells.${system}.default = pkgs.mkShell {
           buildInputs = [
             rustToolchain
@@ -45,5 +41,10 @@
           ];
         };
       }
-    );
+    )
+    // {
+      overlays.default = final: prev: {
+        git_progress_sync = self.packages.${prev.stdenv.hostPlatform.system}.default;
+      };
+    };
 }
