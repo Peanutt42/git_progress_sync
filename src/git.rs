@@ -15,7 +15,8 @@ pub fn save_changes_to_file(
 	opts.include_untracked(true)
 		.recurse_untracked_dirs(true)
 		.show_untracked_content(true)
-		.ignore_submodules(false);
+		.ignore_submodules(false)
+		.show_binary(true);
 
 	let diff = repo.diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut opts))?;
 
