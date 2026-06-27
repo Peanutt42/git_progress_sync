@@ -29,8 +29,17 @@
           version = (fromTOML (builtins.readFile ./Cargo.toml)).package.version;
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
-          nativeBuildInputs = [ pkgs.pkg-config ];
+          nativeBuildInputs = with pkgs; [
+            installShellFiles
+            pkg-config
+          ];
           buildInputs = [ pkgs.openssl ];
+          postInstall = ''
+            installShellCompletion --cmd git_progress_sync \
+              --bash <($out/bin/git_progress_sync completions bash) \
+              --fish <($out/bin/git_progress_sync completions fish) \
+              --zsh <($out/bin/git_progress_sync completions zsh)
+          '';
         };
 
         devShells.${system}.default = pkgs.mkShell {

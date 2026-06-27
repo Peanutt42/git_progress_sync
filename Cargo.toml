@@ -1,10 +1,11 @@
 [package]
 name = "git_progress_sync"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 
 [dependencies]
 clap = { version = "4.5.60", features = ["derive"] }
+clap_complete = "4.5.61"
 colored = "3.1.1"
 crossterm = "0.29.0"
 directories = "6.0.0"

@@ -5,7 +5,8 @@ use crate::git::{
 	load_changes_from_file, save_changes_to_file,
 };
 use crate::{pretty_format_system_time, stash_changes};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 use colored::Colorize;
 use git2::Repository;
 use inquire::ui::RenderConfig;
@@ -31,6 +32,35 @@ pub struct Cli {
 }
 
 impl Cli {
+	pub fn print_completions_if_requested(
+		mut args: impl Iterator<Item = std::ffi::OsString>,
+	) -> bool {
+		let _binary_name = args.next();
+		let Some(subcommand) = args.next() else {
+			return false;
+		};
+		if subcommand != "completions" {
+			return false;
+		}
+
+		let shell = args
+			.next()
+			.and_then(|shell| shell.into_string().ok())
+			.and_then(|shell| Shell::from_str(&shell, true).ok())
+			.unwrap_or_else(|| {
+				exit_with_error("usage: git_progress_sync completions <bash|fish|zsh>");
+			});
+
+		if args.next().is_some() {
+			exit_with_error("usage: git_progress_sync completions <bash|fish|zsh>");
+		}
+
+		let mut command = Self::command();
+		let binary_name = command.get_name().to_string();
+		clap_complete::generate(shell, &mut command, binary_name, &mut std::io::stdout());
+		true
+	}
+
 	pub fn run(self, config_filepath: PathBuf, config: Config) -> Result<(), GitProgressSyncError> {
 		let mut repo = Repository::discover(".")?;
 

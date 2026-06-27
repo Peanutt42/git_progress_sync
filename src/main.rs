@@ -2,6 +2,10 @@ use clap::Parser;
 use git_progress_sync::{Cli, Config, LoadConfigError, exit_with_error};
 
 fn main() {
+	if Cli::print_completions_if_requested(std::env::args_os()) {
+		return;
+	}
+
 	let cli = Cli::parse();
 
 	let config_filepath = Config::get_default_config_filepath().unwrap_or_else(|| {
