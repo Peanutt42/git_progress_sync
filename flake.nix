@@ -33,7 +33,10 @@
             installShellFiles
             pkg-config
           ];
-          buildInputs = [ pkgs.openssl ];
+          buildInputs = with pkgs; [
+            openssl
+            libgit2.dev
+          ];
           postInstall = ''
             installShellCompletion --cmd git_progress_sync \
               --bash <($out/bin/git_progress_sync completions bash) \
@@ -46,6 +49,7 @@
           buildInputs = [
             rustToolchain
             pkgs.pkg-config
+            pkgs.libgit2.dev
             pkgs.openssl
           ];
         };
